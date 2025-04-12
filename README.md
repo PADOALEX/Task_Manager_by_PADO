@@ -1,4 +1,4 @@
-# Task Manager (C++)
+# Task Manager
 
 A simple **Task Manager** application written in **C++** that allows users to create, view, edit, and execute tasks with different priority levels.
 
