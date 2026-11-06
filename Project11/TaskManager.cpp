@@ -1,130 +1,113 @@
 #include "TaskManager.h"
-#include <iostream>
+#include <algorithm>
 #include <fstream>
-using namespace std;
-void TaskManager::addTask(const string& title, const string& description, Priority priority)
-{
-    Task t{ title, description, priority };
-    allTasks.push_back(t);
-    switch (priority)
-    {
-    case Priority::HIGH:   highQueue.push(t); break;
-    case Priority::MEDIUM: medQueue.push(t); break;
-    case Priority::LOW:    lowQueue.push(t); break;
+#include <iostream>
+#include <limits>
+#include <stdexcept>
+
+namespace {
+std::string priorityName(Priority priority) {
+    switch (priority) {
+        case Priority::HIGH: return "HIGH";
+        case Priority::MEDIUM: return "MEDIUM";
+        case Priority::LOW: return "LOW";
     }
+    throw std::invalid_argument("Invalid priority");
 }
-void TaskManager::executeTask()
-{
-    if (!highQueue.empty())
-    {
-        cout << "Виконано: " << highQueue.front().title << endl;
-        highQueue.pop();
-    }
-    else if (!medQueue.empty())
-    {
-        cout << "Виконано: " << medQueue.front().title << endl;
-        medQueue.pop();
-    }
-    else if (!lowQueue.empty())
-    {
-        cout << "Виконано: " << lowQueue.front().title << endl;
-        lowQueue.pop();
-    }
-    else
-    {
-        cout << "Немає завдань.\n";
-    }
 }
-void TaskManager::showAllTasks() const
-{
-    cout << "\n=== Високий пріоритет ===\n";
-    showQueue(highQueue);
-    cout << "\n=== Середній пріоритет ===\n";
-    showQueue(medQueue);
-    cout << "\n=== Низький пріоритет ===\n";
-    showQueue(lowQueue);
+
+void TaskManager::addTask(const std::string& title, const std::string& description, Priority priority) {
+    if (title.empty() || title.find_first_of("\r\n") != std::string::npos || description.find_first_of("\r\n") != std::string::npos)
+        throw std::invalid_argument("Use a nonempty, single-line task title and single-line description");
+    priorityName(priority);
+    tasks.push_back({title, description, priority});
 }
-void TaskManager::showQueue(queue<Task> q) const
-{
-    while (!q.empty())
-    {
-        Task t = q.front();
-        cout << "- " << t.title << " (" << t.description << ")\n";
-        q.pop();
-    }
-}
-void TaskManager::editTask(int index)
-{
-    if (index < 0 || index >= allTasks.size())
-    {
-        cout << "Невірний індекс.\n";
+
+void TaskManager::executeTask() {
+    if (tasks.empty()) {
+        std::cout << "No pending tasks.\n";
         return;
     }
-    Task& t = allTasks[index];
-    cout << "Редагування: " << t.title << endl;
-    cout << "Нова назва (або залиш порожньо): ";
-    string newTitle;
-    getline(cin, newTitle);
-    if (!newTitle.empty()) t.title = newTitle;
-    cout << "Новий опис (або залиш порожньо): ";
-    string newDesc;
-    getline(cin, newDesc);
-    if (!newDesc.empty()) t.description = newDesc;
-    cout << "Новий пріоритет (1-Високий, 2-Середній, 3-Низький, 0 - без змін): ";
-    int p;
-    cin >> p;
-    cin.ignore();
-    if (p >= 1 && p <= 3)
-    {
-        t.priority = getPriorityFromInput(p);
-    }
-    cout << "Завдання оновлено.\n";
+    auto next = std::min_element(tasks.begin(), tasks.end(), [](const Task& left, const Task& right) {
+        return left.priority < right.priority;
+    });
+    std::cout << "Executing: " << next->title << '\n';
+    tasks.erase(next);
 }
-void TaskManager::saveToFile(const string& filename) const
-{
-    ofstream fout(filename);
-    for (const Task& t : allTasks)
-    {
-        fout << priorityToString(t.priority) << '\n'
-            << t.title << '\n'
-            << t.description << '\n';
-    }
-    fout.close();
-    cout << "Збережено у файл.\n";
-}
-void TaskManager::loadFromFile(const string& filename)
-{
-    ifstream fin(filename);
-    if (!fin.is_open()) return;
-    string prioStr, title, desc;
-    while (getline(fin, prioStr) && getline(fin, title) && getline(fin, desc))
-    {
-        addTask(title, desc, stringToPriority(prioStr));
-    }
-    fin.close();
-}
-string TaskManager::priorityToString(Priority p) const
-{
-    switch (p)
-    {
-    case Priority::HIGH: return "HIGH";
-    case Priority::MEDIUM: return "MEDIUM";
-    case Priority::LOW: return "LOW";
-    }
-    return "";
-}
-Priority getPriorityFromInput(int input)
-{
-    switch (input)
-    {
-    case 1: return Priority::HIGH;
-    case 2: return Priority::MEDIUM;
-    default: return Priority::LOW;
+
+void TaskManager::showAllTasks() const {
+    for (Priority priority : {Priority::HIGH, Priority::MEDIUM, Priority::LOW}) {
+        for (std::size_t index = 0; index < tasks.size(); ++index) {
+            const auto& task = tasks[index];
+            if (task.priority == priority)
+                std::cout << index << ": " << priorityName(priority) << " | " << task.title << " | " << task.description << '\n';
+        }
     }
 }
-Priority stringToPriority(const string& str)
-{
-    if (str == "HIGH") return Priority::HIGH;
-    if (str == "MEDIUM") return Priority::MEDIUM;
-    return Priority::LOW;
+
+void TaskManager::editTask(int index) {
+    if (index < 0 || static_cast<std::size_t>(index) >= tasks.size()) {
+        std::cout << "Invalid task index.\n";
+        return;
+    }
+    auto updated = tasks[static_cast<std::size_t>(index)];
+    std::string title, description;
+    int priority;
+    std::cout << "New title (empty keeps current): ";
+    if (!std::getline(std::cin,title)) return;
+    std::cout << "New description (empty keeps current): ";
+    if (!std::getline(std::cin,description)) return;
+    std::cout << "Priority (1=HIGH, 2=MEDIUM, 3=LOW, 0=unchanged): ";
+    if (!(std::cin >> priority)) {
+        if (!std::cin.eof()) {
+            std::cin.clear();
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(),'\n');
+        }
+        return;
+    }
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(),'\n');
+    if (priority < 0 || priority > 3) return;
+    if (!title.empty()) updated.title = title;
+    if (!description.empty()) updated.description = description;
+    if (priority != 0) updated.priority = getPriorityFromInput(priority);
+    tasks[static_cast<std::size_t>(index)] = updated;
+}
+
+void TaskManager::saveToFile(const std::string& filename) const {
+    std::ofstream file(filename);
+    if (!file) throw std::runtime_error("Cannot open task file for writing");
+    for (const auto& task : tasks)
+        file << priorityName(task.priority) << '\n' << task.title << '\n' << task.description << '\n';
+    file.close();
+    if (!file) throw std::runtime_error("Task file write failed");
+}
+
+void TaskManager::loadFromFile(const std::string& filename) {
+    std::ifstream file(filename);
+    if (!file.is_open()) return;
+    std::vector<Task> loaded;
+    std::string priority, title, description;
+    while (std::getline(file,priority)) {
+        if (!std::getline(file,title) || !std::getline(file,description) || title.empty())
+            throw std::runtime_error("Incomplete task record");
+        loaded.push_back({title, description, stringToPriority(priority)});
+    }
+    if (file.bad()) throw std::runtime_error("Task file read failed");
+    tasks.swap(loaded);
+}
+
+Priority getPriorityFromInput(int input) {
+    switch(input) {
+        case 1: return Priority::HIGH;
+        case 2: return Priority::MEDIUM;
+        case 3: return Priority::LOW;
+        default: throw std::invalid_argument("Priority must be 1, 2 or 3");
+    }
+}
+
+Priority stringToPriority(const std::string& value) {
+    if (value == "HIGH") return Priority::HIGH;
+    if (value == "MEDIUM") return Priority::MEDIUM;
+    if (value == "LOW") return Priority::LOW;
+    throw std::runtime_error("Unknown priority in task file");
 }
